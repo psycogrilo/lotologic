@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:3002/api/:path*",
+        destination: "https://lotologic-api-production.up.railway.app/api/:path*",
       },
     ]
   },
