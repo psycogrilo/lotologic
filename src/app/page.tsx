@@ -1,65 +1,135 @@
-import Image from "next/image";
+import Link from "next/link"
+import { CheckCircle2, Bell, Clock, Shield } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 
-export default function Home() {
+export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const cls = { sm: "text-lg", md: "text-2xl", lg: "text-4xl" }[size]
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <span className={`font-extrabold tracking-tight ${cls}`}>
+      <span className="text-amber-400">Loto</span>
+      <span className="text-blue-500">Logic</span>
+    </span>
+  )
+}
+
+function Nav() {
+  return (
+    <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#0A0E1A]/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <Logo />
+        <nav className="hidden gap-6 text-sm text-slate-400 sm:flex">
+          <a href="#features" className="hover:text-amber-400 transition-colors">Recursos</a>
+          <a href="#precos" className="hover:text-amber-400 transition-colors">Preços</a>
+          <a href="#faq" className="hover:text-amber-400 transition-colors">FAQ</a>
+        </nav>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" asChild className="text-slate-300">
+            <Link href="/login">Entrar</Link>
+          </Button>
+          <Button size="sm" asChild className="bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">
+            <Link href="/register">Começar agora</Link>
+          </Button>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+    </header>
+  )
+}
+
+function HeroSection() {
+  return (
+    <section className="mx-auto max-w-5xl px-4 py-16 text-center">
+      <Badge className="mb-4 border-amber-500/30 bg-amber-500/10 text-amber-400">
+        Mega-Sena · Quina · Lotofácil
+      </Badge>
+      <h1 className="mb-4 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+        Jogue com{" "}
+        <span className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
+          inteligência
+        </span>{" "}
+        estatística
+      </h1>
+      <p className="mx-auto mb-8 max-w-xl text-base text-slate-400 sm:text-lg">
+        Desdobramentos automáticos, análise por colunas e histórico completo.
+      </p>
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <Button size="lg" asChild className="w-full sm:w-auto bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">
+          <Link href="/register">Quero acessar por R$ 89,90</Link>
+        </Button>
+        <Button size="lg" variant="outline" asChild className="w-full sm:w-auto border-slate-700 text-slate-300 hover:bg-slate-800">
+          <a href="#precos">Ver preços</a>
+        </Button>
+      </div>
+      <p className="mt-3 text-xs text-slate-500">Pix · Cartão · Boleto — ativação imediata</p>
+      <div className="mt-10 flex flex-wrap justify-center gap-6 text-sm text-slate-400">
+        {[
+          { icon: Shield, label: "Pagamento seguro via Mercado Pago" },
+          { icon: Clock,  label: "Acesso por 6 meses completos" },
+          { icon: Bell,   label: "Alertas de sorteio por e-mail" },
+        ].map(({ icon: Icon, label }) => (
+          <span key={label} className="flex items-center gap-2">
+            <Icon size={15} className="text-amber-400" /> {label}
+          </span>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+const FEATURES = [
+  "3 loterias: Mega-Sena, Quina e Lotofácil",
+  "Gerador com lógica de colunas (score 0–100%)",
+  "Desdobramento inteligente — todas as combinações",
+  "Exportação de desdobramentos em PDF",
+  "Análise pós-sorteio coluna a coluna",
+  "Histórico completo de 6 meses",
+  "Alertas de sorteio por e-mail",
+  "Suporte via chat em horário comercial",
+]
+
+function PricingSection() {
+  return (
+    <section id="precos" className="mx-auto max-w-sm px-4 py-16">
+      <h2 className="mb-8 text-center text-2xl font-bold text-white">Acesso completo por um preço único</h2>
+      <div className="relative overflow-hidden rounded-2xl border-2 border-amber-500/60 bg-gradient-to-b from-slate-800 to-[#111827] p-6 shadow-2xl">
+        <div className="absolute -right-8 top-5 rotate-[35deg] bg-amber-500 px-10 py-1 text-xs font-bold text-[#0A0E1A]">POPULAR</div>
+        <div className="mb-1 flex items-baseline gap-1">
+          <span className="text-4xl font-extrabold text-amber-400">R$ 89,90</span>
         </div>
-      </main>
-    </div>
-  );
+        <p className="mb-5 text-sm text-slate-400">pagamento único · acesso por 6 meses</p>
+        <ul className="mb-6 space-y-3">
+          {FEATURES.map((f) => (
+            <li key={f} className="flex items-start gap-2 text-sm text-slate-200">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-400" /> {f}
+            </li>
+          ))}
+        </ul>
+        <Button size="lg" asChild className="w-full bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">
+          <Link href="/register">Quero acessar por R$ 89,90</Link>
+        </Button>
+        <p className="mt-3 text-center text-xs text-slate-500">Pix · Cartão · Boleto — ativação imediata</p>
+      </div>
+    </section>
+  )
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-slate-800 py-8 text-center text-xs text-slate-500">
+      <Logo size="sm" />
+      <p className="mt-2">© {new Date().getFullYear()} LotoLogic. Todos os direitos reservados.</p>
+      <p className="mt-1">Este produto não tem vínculo com a Caixa Econômica Federal.</p>
+    </footer>
+  )
+}
+
+export default function LandingPage() {
+  return (
+    <main className="min-h-screen bg-[#0A0E1A] text-slate-100">
+      <Nav />
+      <HeroSection />
+      <PricingSection />
+      <Footer />
+    </main>
+  )
 }
