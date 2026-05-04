@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
+const API = "https://lotologic-api-production.up.railway.app"
+
 function Logo() {
   return (
     <span className="text-4xl font-extrabold tracking-tight">
@@ -35,14 +37,26 @@ export default function RegisterPage() {
   const [showPw, setShowPw] = useState(false)
   const [sent, setSent] = useState(false)
   const [email, setEmail] = useState("")
+  const [error, setError] = useState("")
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } =
     useForm<Form>({ resolver: zodResolver(schema) })
 
   async function onSubmit(data: Form) {
-    await new Promise(r => setTimeout(r, 1000))
-    setEmail(data.email)
-    setSent(true)
+    setError("")
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: data.name, email: data.email, password: data.password }),
+      })
+      const body = await res.json()
+      if (!res.ok) { setError(body.message || "Erro ao cadastrar"); return }
+      setEmail(data.email)
+      setSent(true)
+    } catch (e) {
+      setError("Erro de conexão. Tente novamente.")
+    }
   }
 
   return (
@@ -60,11 +74,7 @@ export default function RegisterPage() {
             <h2 className="text-lg font-bold text-white">Confirme seu e-mail</h2>
             <p className="text-sm text-slate-400">
               Enviamos um link para <strong className="text-white">{email}</strong>.
-              Clique nele para ativar sua conta.
             </p>
-            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-300">
-              O link expira em <strong>24 horas</strong>. Verifique a pasta de spam.
-            </div>
             <Link href="/login" className="block text-xs text-slate-500 hover:text-slate-300">
               Já confirmei → ir para login
             </Link>
@@ -72,6 +82,7 @@ export default function RegisterPage() {
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <h1 className="text-lg font-bold text-white">Criar conta</h1>
+            {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
             <div className="space-y-1">
               <Label className="text-xs text-slate-400">Nome completo</Label>
               <Input {...register("name")} placeholder="João Silva"
@@ -107,9 +118,6 @@ export default function RegisterPage() {
               className="w-full bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">
               {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : "Criar conta"}
             </Button>
-            <p className="text-center text-xs text-slate-500">
-              Ao criar a conta você aceita os <a href="#" className="text-blue-400 hover:underline">Termos de Uso</a>
-            </p>
           </form>
         )}
         <div className="mt-5 border-t border-slate-800 pt-4 text-center text-sm text-slate-400">
