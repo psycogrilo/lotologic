@@ -41,6 +41,16 @@ const LOTTERIES: { id: LotteryId; label: string; draw: number }[] = [
   { id: "lotofacil", label: "Lotofácil",  draw: 15 },
 ]
 
+// ✅ FIX: Função auxiliar para formatar data corretamente
+function parseDate(str: string): string {
+  if (!str) return ""
+  // Se já está no formato DD/MM/YYYY, retorna direto
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str
+  // Tenta converter ISO ou outros formatos
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? str : d.toLocaleDateString("pt-BR")
+}
+
 export default function AnalisePage() {
   const [lotteryId, setLotteryId] = useState<LotteryId>("megasena")
   const [concurso, setConcurso]   = useState("")
@@ -50,6 +60,7 @@ export default function AnalisePage() {
   const [analyzed, setAnalyzed]   = useState(false)
   const [loadingDraw, setLoadingDraw] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [fetchError, setFetchError] = useState("") // ✅ FIX: estado para mostrar erro
   const [cols, setCols]           = useState<any[]>([])
   const [score, setScore]         = useState(0)
   const [insight, setInsight]     = useState("")
@@ -61,34 +72,52 @@ export default function AnalisePage() {
     fetchLatest()
   }, [lotteryId])
 
+  // ✅ FIX: fetchLatest com tratamento de erro correto
   async function fetchLatest() {
     setLoadingDraw(true)
     setAnalyzed(false)
+    setFetchError("")
     try {
-      const res  = await fetch(`${API}/api/draws/latest/${lotteryId}`)
+      const res = await fetch(`${API}/api/draws/latest/${lotteryId}`)
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status}`)
       const data = await res.json()
       if (data.numbers?.length) {
         setDrawnNumbers(data.numbers)
-        setConcurso(String(data.concurso))
-        setConcursoDate(data.date ? new Date(data.date).toLocaleDateString("pt-BR") : "")
+        setConcurso(String(data.concurso ?? ""))
+        setConcursoDate(parseDate(data.date ?? ""))
+      } else {
+        setFetchError("Resultado não encontrado. Tente buscar manualmente.")
       }
-    } catch {}
-    setLoadingDraw(false)
+    } catch (err: any) {
+      console.error("Erro ao buscar último resultado:", err)
+      setFetchError("Não foi possível buscar o resultado da Caixa. Verifique sua conexão.")
+    } finally {
+      setLoadingDraw(false)
+    }
   }
 
+  // ✅ FIX: fetchByConcurso com tratamento de erro correto
   async function fetchByConcurso() {
     if (!concurso) return
     setLoadingDraw(true)
     setAnalyzed(false)
+    setFetchError("")
     try {
-      const res  = await fetch(`${API}/api/draws/${lotteryId}/${concurso}`)
+      const res = await fetch(`${API}/api/draws/${lotteryId}/${concurso}`)
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status}`)
       const data = await res.json()
       if (data.numbers?.length) {
         setDrawnNumbers(data.numbers)
-        setConcursoDate(data.date ? new Date(data.date).toLocaleDateString("pt-BR") : "")
+        setConcursoDate(parseDate(data.date ?? ""))
+      } else {
+        setFetchError("Concurso não encontrado.")
       }
-    } catch {}
-    setLoadingDraw(false)
+    } catch (err: any) {
+      console.error("Erro ao buscar concurso:", err)
+      setFetchError("Concurso não encontrado ou erro na conexão.")
+    } finally {
+      setLoadingDraw(false)
+    }
   }
 
   async function analyze() {
@@ -159,11 +188,16 @@ export default function AnalisePage() {
           <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-sm font-semibold text-white">Resultado oficial</p>
-              {concurso && (
+              {/* ✅ FIX: mostra concurso e data corretamente, sem "undefined" */}
+              {concurso ? (
                 <p className="text-xs text-slate-400 mt-0.5">
                   Concurso <strong className="text-amber-400">{concurso}</strong>
                   {concursoDate && <> · {concursoDate}</>}
                 </p>
+              ) : (
+                !loadingDraw && (
+                  <p className="text-xs text-slate-500 mt-0.5">Buscando último concurso…</p>
+                )
               )}
             </div>
             <div className="flex gap-2 items-center">
@@ -181,9 +215,16 @@ export default function AnalisePage() {
             </div>
           </div>
 
+          {/* ✅ FIX: mensagem de erro amigável */}
+          {fetchError && (
+            <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              {fetchError}
+            </div>
+          )}
+
           {loadingDraw ? (
             <div className="flex items-center gap-2 text-sm text-slate-400">
-              <Loader2 size={14} className="animate-spin text-amber-400"/> Buscando resultado da Caixa...
+              <Loader2 size={14} className="animate-spin text-amber-400"/> Buscando resultado da Caixa…
             </div>
           ) : (
             <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
