@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -9,6 +10,8 @@ import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+
+const API = "https://lotologic-api-production.up.railway.app"
 
 function Logo() {
   return (
@@ -30,6 +33,7 @@ type LoginForm = z.infer<typeof loginSchema>
 type ForgotForm = z.infer<typeof forgotSchema>
 
 export default function LoginPage() {
+  const router = useRouter()
   const [showPw, setShowPw] = useState(false)
   const [forgot, setForgot] = useState(false)
   const [fSent, setFSent] = useState(false)
@@ -41,12 +45,27 @@ export default function LoginPage() {
 
   async function onLogin(data: LoginForm) {
     setLoginErr("")
-    await new Promise(r => setTimeout(r, 800))
-    setLoginErr("E-mail ou senha incorretos")
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json()
+      if (!res.ok) { setLoginErr(body.message || "E-mail ou senha incorretos"); return }
+      localStorage.setItem("token", body.token)
+      router.push("/dashboard")
+    } catch {
+      setLoginErr("Erro de conexão. Tente novamente.")
+    }
   }
 
   async function onForgot(data: ForgotForm) {
-    await new Promise(r => setTimeout(r, 800))
+    await fetch(`${API}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
     setFEmail(data.email)
     setFSent(true)
   }
@@ -65,9 +84,7 @@ export default function LoginPage() {
             <div className="space-y-4 text-center">
               <CheckCircle2 size={48} className="mx-auto text-emerald-400" />
               <h2 className="text-lg font-bold text-white">E-mail enviado!</h2>
-              <p className="text-sm text-slate-400">
-                Enviamos instruções para <strong className="text-white">{fEmail}</strong>.
-              </p>
+              <p className="text-sm text-slate-400">Enviamos instruções para <strong className="text-white">{fEmail}</strong>.</p>
               <Button variant="outline" onClick={() => { setForgot(false); setFSent(false) }}
                 className="w-full border-slate-700 text-slate-300 hover:bg-slate-800">
                 Voltar ao login
@@ -76,7 +93,6 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={forgotForm.handleSubmit(onForgot)} className="space-y-4">
               <h1 className="text-lg font-bold text-white">Recuperar senha</h1>
-              <p className="text-sm text-slate-400">Informe seu e-mail para receber o link de redefinição.</p>
               <div className="space-y-1">
                 <Label className="text-xs text-slate-400">E-mail</Label>
                 <Input {...forgotForm.register("email")} type="email" placeholder="joao@email.com"
