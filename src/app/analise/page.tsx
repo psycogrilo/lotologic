@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Dices, Layers, BarChart2, History, User, LogOut, CheckCircle2, Circle, AlertCircle, XCircle, TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Dices, Layers, BarChart2, History, User, LogOut, CheckCircle2, Circle, AlertCircle, XCircle, TrendingUp, Minus, Loader2, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+
+const API = "https://lotologic-api-production.up.railway.app"
 
 function Logo() {
   return (
@@ -24,6 +26,7 @@ const NAV = [
 ]
 
 type Status = "exact" | "group" | "nearby" | "miss"
+type LotteryId = "megasena" | "quina" | "lotofacil"
 
 const STATUS_CFG = {
   exact:  { label: "Exact",  cardCls: "border-emerald-500/30 bg-emerald-500/5",  ballCls: "bg-emerald-500/20 border-emerald-500/60 text-emerald-200", drawnCls: "text-emerald-400", icon: CheckCircle2, iconCls: "text-emerald-400" },
@@ -32,25 +35,92 @@ const STATUS_CFG = {
   miss:   { label: "Miss",   cardCls: "border-slate-600/30 bg-slate-800/30",     ballCls: "bg-slate-700/40 border-slate-600 text-slate-400",           drawnCls: "text-slate-400",   icon: XCircle,      iconCls: "text-slate-500"   },
 }
 
-const MOCK_RESULT = [
-  { col: 1, played: 7,  drawn: 8,  status: "miss"   as Status, diff: 1  },
-  { col: 2, played: 18, drawn: 17, status: "nearby" as Status, diff: 1  },
-  { col: 3, played: 29, drawn: 29, status: "exact"  as Status, diff: 0  },
-  { col: 4, played: 37, drawn: 37, status: "exact"  as Status, diff: 0  },
-  { col: 5, played: 45, drawn: 46, status: "group"  as Status, diff: 1  },
-  { col: 6, played: 58, drawn: 58, status: "exact"  as Status, diff: 0  },
+const LOTTERIES: { id: LotteryId; label: string; draw: number }[] = [
+  { id: "megasena",  label: "Mega-Sena",  draw: 6  },
+  { id: "quina",     label: "Quina",      draw: 5  },
+  { id: "lotofacil", label: "Lotofácil",  draw: 15 },
 ]
 
 export default function AnalisePage() {
-  const [analyzed, setAnalyzed] = useState(false)
-  const [drawn, setDrawn] = useState(["08","17","29","37","46","58"])
-  const [played, setPlayed] = useState(["07","18","29","37","45","58"])
+  const [lotteryId, setLotteryId] = useState<LotteryId>("megasena")
+  const [concurso, setConcurso]   = useState("")
+  const [concursoDate, setConcursoDate] = useState("")
+  const [drawnNumbers, setDrawnNumbers] = useState<(number|"")[]>(Array(6).fill(""))
+  const [playedNumbers, setPlayedNumbers] = useState<(number|"")[]>(Array(6).fill(""))
+  const [analyzed, setAnalyzed]   = useState(false)
+  const [loadingDraw, setLoadingDraw] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [cols, setCols]           = useState<any[]>([])
+  const [score, setScore]         = useState(0)
+  const [insight, setInsight]     = useState("")
 
-  const exact  = MOCK_RESULT.filter(c => c.status === "exact").length
-  const group  = MOCK_RESULT.filter(c => c.status === "group").length
-  const nearby = MOCK_RESULT.filter(c => c.status === "nearby").length
-  const miss   = MOCK_RESULT.filter(c => c.status === "miss").length
-  const score  = Math.round((exact*100 + group*60 + nearby*30) / MOCK_RESULT.length)
+  const lottery = LOTTERIES.find(l => l.id === lotteryId)!
+
+  // Buscar último resultado automaticamente ao trocar loteria
+  useEffect(() => {
+    fetchLatest()
+  }, [lotteryId])
+
+  async function fetchLatest() {
+    setLoadingDraw(true)
+    setAnalyzed(false)
+    try {
+      const res  = await fetch(`${API}/api/draws/latest/${lotteryId}`)
+      const data = await res.json()
+      if (data.numbers?.length) {
+        setDrawnNumbers(data.numbers)
+        setConcurso(String(data.concurso))
+        setConcursoDate(data.date ? new Date(data.date).toLocaleDateString("pt-BR") : "")
+      }
+    } catch {}
+    setLoadingDraw(false)
+  }
+
+  async function fetchByConcurso() {
+    if (!concurso) return
+    setLoadingDraw(true)
+    setAnalyzed(false)
+    try {
+      const res  = await fetch(`${API}/api/draws/${lotteryId}/${concurso}`)
+      const data = await res.json()
+      if (data.numbers?.length) {
+        setDrawnNumbers(data.numbers)
+        setConcursoDate(data.date ? new Date(data.date).toLocaleDateString("pt-BR") : "")
+      }
+    } catch {}
+    setLoadingDraw(false)
+  }
+
+  async function analyze() {
+    const drawn  = drawnNumbers.map(Number).filter(n => n > 0)
+    const played = playedNumbers.map(Number).filter(n => n > 0)
+    if (drawn.length !== lottery.draw || played.length !== lottery.draw) return
+    setAnalyzing(true)
+    try {
+      const res  = await fetch(`${API}/api/analysis/post-draw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lottery: lotteryId, drawn, played }),
+      })
+      const data = await res.json()
+      setCols(data.cols || [])
+      setScore(data.overallScore || 0)
+      setInsight(data.insight || "")
+      setAnalyzed(true)
+    } catch {}
+    setAnalyzing(false)
+  }
+
+  const drawnFilled  = drawnNumbers.filter(n => n !== "").length
+  const playedFilled = playedNumbers.filter(n => n !== "").length
+  const canAnalyze   = drawnFilled === lottery.draw && playedFilled === lottery.draw
+
+  const exact  = cols.filter(c => c.status === "exact").length
+  const group  = cols.filter(c => c.status === "group").length
+  const nearby = cols.filter(c => c.status === "nearby").length
+  const miss   = cols.filter(c => c.status === "miss").length
+
+  const gridCols = lottery.draw <= 6 ? lottery.draw : lottery.draw <= 10 ? 5 : 8
 
   return (
     <div className="min-h-screen bg-[#0A0E1A]">
@@ -74,48 +144,94 @@ export default function AnalisePage() {
           <p className="mt-1 text-sm text-slate-400">Compare seu jogo com o resultado oficial coluna a coluna</p>
         </div>
 
-        {/* Config */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-800 bg-[#111827] p-5">
-            <p className="mb-3 text-sm font-semibold text-white">Resultado oficial</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {drawn.map((v, i) => (
-                <div key={i} className="flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-semibold text-slate-500">Col {i+1}</span>
-                  <input type="number" min={1} max={60} value={v}
-                    onChange={e => { const a=[...drawn]; a[i]=e.target.value; setDrawn(a) }}
-                    className="w-12 rounded-lg border border-slate-700 bg-[#1a2035] py-1.5 text-center text-sm font-bold text-white outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                </div>
-              ))}
+        {/* Lottery tabs */}
+        <div className="flex gap-1 rounded-xl border border-slate-800 bg-[#111827] p-1">
+          {LOTTERIES.map(({ id, label }) => (
+            <button key={id} onClick={() => { setLotteryId(id); setPlayedNumbers(Array(LOTTERIES.find(l=>l.id===id)!.draw).fill("")); setAnalyzed(false) }}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${lotteryId===id ? "bg-amber-500 text-[#0A0E1A]" : "text-slate-400 hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Resultado oficial */}
+        <div className="rounded-xl border border-slate-800 bg-[#111827] p-5">
+          <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <p className="text-sm font-semibold text-white">Resultado oficial</p>
+              {concurso && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Concurso <strong className="text-amber-400">{concurso}</strong>
+                  {concursoDate && <> · {concursoDate}</>}
+                </p>
+              )}
             </div>
-            <p className="mb-3 text-sm font-semibold text-white">Seu jogo</p>
-            <div className="flex flex-wrap gap-2">
-              {played.map((v, i) => (
-                <div key={i} className="flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-semibold text-slate-500">Col {i+1}</span>
-                  <input type="number" min={1} max={60} value={v}
-                    onChange={e => { const a=[...played]; a[i]=e.target.value; setPlayed(a) }}
-                    className="w-12 rounded-lg border border-slate-700 bg-[#1a2035] py-1.5 text-center text-sm font-bold text-white outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                </div>
-              ))}
+            <div className="flex gap-2 items-center">
+              <input type="number" placeholder="Nº concurso" value={concurso}
+                onChange={e => setConcurso(e.target.value)}
+                className="w-32 rounded-lg border border-slate-700 bg-[#1a2035] px-3 py-1.5 text-sm text-white outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+              <button onClick={fetchByConcurso} disabled={loadingDraw}
+                className="rounded-lg border border-slate-700 bg-[#1a2035] px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40">
+                Buscar
+              </button>
+              <button onClick={fetchLatest} disabled={loadingDraw} title="Buscar último resultado"
+                className="rounded-lg border border-slate-700 bg-[#1a2035] p-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-40">
+                {loadingDraw ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>}
+              </button>
             </div>
           </div>
-          <div className="flex gap-3">
-            {analyzed && (
-              <Button variant="outline" onClick={() => setAnalyzed(false)}
-                className="border-slate-700 text-slate-300 hover:bg-slate-800">
-                Nova análise
-              </Button>
-            )}
-            <Button onClick={() => setAnalyzed(true)}
-              className="flex-1 bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">
-              Analisar resultado
-            </Button>
+
+          {loadingDraw ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Loader2 size={14} className="animate-spin text-amber-400"/> Buscando resultado da Caixa...
+            </div>
+          ) : (
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
+              {drawnNumbers.map((v, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <span className="text-[9px] font-semibold text-slate-500">Col {i+1}</span>
+                  <input type="number" min={1} max={60} value={v === "" ? "" : v}
+                    onChange={e => { const a=[...drawnNumbers]; a[i]=e.target.value===""?"":Number(e.target.value); setDrawnNumbers(a); setAnalyzed(false) }}
+                    className="w-full rounded-lg border border-slate-700 bg-[#1a2035] py-1.5 text-center text-sm font-bold text-white outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder="—" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Seu jogo */}
+        <div className="rounded-xl border border-slate-800 bg-[#111827] p-5">
+          <p className="mb-3 text-sm font-semibold text-white">Seu jogo</p>
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
+            {playedNumbers.map((v, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <span className="text-[9px] font-semibold text-slate-500">Col {i+1}</span>
+                <input type="number" min={1} max={60} value={v === "" ? "" : v}
+                  onChange={e => { const a=[...playedNumbers]; a[i]=e.target.value===""?"":Number(e.target.value); setPlayedNumbers(a); setAnalyzed(false) }}
+                  className="w-full rounded-lg border border-amber-500/30 bg-[#1a2035] py-1.5 text-center text-sm font-bold text-white outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  placeholder="—" />
+              </div>
+            ))}
           </div>
         </div>
 
+        {/* Actions */}
+        <div className="flex gap-3">
+          {analyzed && (
+            <Button variant="outline" onClick={() => { setAnalyzed(false); setPlayedNumbers(Array(lottery.draw).fill("")) }}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800">
+              Nova análise
+            </Button>
+          )}
+          <Button onClick={analyze} disabled={!canAnalyze || analyzing}
+            className="flex-1 bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400 disabled:opacity-40">
+            {analyzing ? <><Loader2 size={15} className="animate-spin mr-2"/>Analisando…</> : "Analisar resultado"}
+          </Button>
+        </div>
+
         {/* Results */}
-        {analyzed && (
+        {analyzed && cols.length > 0 && (
           <>
             {/* Score bar */}
             <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
@@ -126,7 +242,7 @@ export default function AnalisePage() {
               <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-slate-800">
                 <div className={`h-full rounded-full ${score>=75?"bg-emerald-500":score>=50?"bg-amber-500":"bg-red-500"}`} style={{width:`${score}%`}} />
               </div>
-              <div className="grid grid-cols-4 gap-2 text-center mb-3">
+              <div className="grid grid-cols-4 gap-2 text-center">
                 {[
                   { label:"Exact",  count:exact,  cls:"text-emerald-400" },
                   { label:"Group",  count:group,  cls:"text-amber-400"   },
@@ -139,20 +255,14 @@ export default function AnalisePage() {
                   </div>
                 ))}
               </div>
-              <div className="flex h-1.5 w-full overflow-hidden rounded-full">
-                {exact>0  && <div className="bg-emerald-500" style={{flex:exact}} />}
-                {group>0  && <div className="bg-amber-500"   style={{flex:group}} />}
-                {nearby>0 && <div className="bg-orange-500"  style={{flex:nearby}} />}
-                {miss>0   && <div className="bg-slate-700"   style={{flex:miss}} />}
-              </div>
             </div>
 
             {/* Column cards */}
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Resultado por coluna</p>
-              <div className="grid grid-cols-6 gap-2">
-                {MOCK_RESULT.map(col => {
-                  const cfg = STATUS_CFG[col.status]
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(cols.length,6)},minmax(0,1fr))` }}>
+                {cols.map((col: any) => {
+                  const cfg = STATUS_CFG[col.status as Status]
                   const Icon = cfg.icon
                   return (
                     <div key={col.col} className={`flex flex-col items-center gap-2 rounded-xl border p-3 text-center ${cfg.cardCls}`}>
@@ -178,49 +288,10 @@ export default function AnalisePage() {
               <div className="mb-2 flex items-center gap-2">
                 {score>=75 ? <TrendingUp size={18} className="text-emerald-400"/> : <Minus size={18} className="text-amber-400"/>}
                 <p className={`font-bold ${score>=75?"text-emerald-400":"text-amber-400"}`}>
-                  {exact>=3 ? `Excelente! ${exact} de ${MOCK_RESULT.length} colunas com acerto exato.` : "Alinhamento de tiers sólido — continue ajustando."}
+                  {exact>=3 ? `Excelente! ${exact} de ${cols.length} colunas com acerto exato.` : "Continue ajustando as colunas."}
                 </p>
               </div>
-              <p className="text-sm text-slate-300">
-                Seu jogo apresentou {exact} acerto{exact!==1?"s":""} exato{exact!==1?"s":""}, {group} no mesmo tier e {nearby} próximo{nearby!==1?"s":""}.
-                {exact>=3 ? " O alinhamento estatístico por colunas foi validado." : " Ajuste as colunas com miss para melhorar na próxima aposta."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3 text-xs">
-                {[
-                  {label:`${exact} exact`,  cls:"text-emerald-400"},
-                  {label:`${group} group`,  cls:"text-amber-400"},
-                  {label:`${nearby} nearby`,cls:"text-orange-400"},
-                  {label:`${miss} miss`,    cls:"text-slate-500"},
-                ].map(({label,cls})=>(
-                  <span key={label} className={`font-semibold ${cls}`}>{label}</span>
-                ))}
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Legenda</p>
-              <div className="space-y-2">
-                {(["exact","group","nearby","miss"] as Status[]).map(s => {
-                  const cfg = STATUS_CFG[s]
-                  const Icon = cfg.icon
-                  const descs: Record<Status,string> = {
-                    exact:  "Número idêntico ao sorteado na mesma coluna",
-                    group:  "Mesmo tier (forte/médio/fraco), número diferente",
-                    nearby: "Diferença ≤ 3 entre o jogado e o sorteado",
-                    miss:   "Tiers diferentes — sem alinhamento nesta coluna",
-                  }
-                  return (
-                    <div key={s} className="flex items-start gap-2">
-                      <Icon size={14} className={`mt-0.5 shrink-0 ${cfg.iconCls}`} />
-                      <div>
-                        <span className={`text-xs font-bold ${cfg.iconCls}`}>{cfg.label}</span>
-                        <span className="ml-2 text-xs text-slate-400">{descs[s]}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <p className="text-sm text-slate-300">{insight}</p>
             </div>
           </>
         )}
