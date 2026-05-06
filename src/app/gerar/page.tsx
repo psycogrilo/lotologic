@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Check, Dices, Layers, BarChart2, History, User, LogOut, Info, AlertTriangle, RotateCcw, Save } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Dices, Layers, BarChart2, History, User, LogOut, Loader2, Zap, Hand, RotateCcw, Save, ChevronRight, Lock } from "lucide-react"
+
+const API = "https://lotologic-api-production.up.railway.app"
 
 function Logo() {
   return (
@@ -23,73 +24,169 @@ const NAV = [
   { href: "/perfil",        label: "Perfil",        icon: User      },
 ]
 
-const LOTTERIES = [
-  { id: "megasena",  label: "Mega-Sena",  emoji: "🟢", range: "1–60", draw: 6,  min: 6,  max: 20, price: 6    },
-  { id: "quina",     label: "Quina",      emoji: "🔵", range: "1–80", draw: 5,  min: 5,  max: 15, price: 3    },
-  { id: "lotofacil", label: "Lotofácil",  emoji: "🟡", range: "1–25", draw: 15, min: 15, max: 20, price: 3.50 },
+type LotteryId = "megasena" | "lotofacil"
+type Mode = "auto" | "manual"
+type Group = "strong" | "medium" | "weak"
+
+const LOTTERIES: { id: LotteryId; label: string; draw: number; universe: number; color: string }[] = [
+  { id: "megasena",  label: "Mega-Sena",  draw: 6,  universe: 60, color: "bg-emerald-500" },
+  { id: "lotofacil", label: "Lotofácil",  draw: 15, universe: 25, color: "bg-blue-500"    },
 ]
 
-const COMBS: Record<number, number> = {
-  5:1,6:1,7:7,8:28,9:84,10:210,11:462,12:924,13:1716,14:3003,15:5005,16:8008,17:12376,18:18564,19:27132,20:38760
+interface ColumnAnalysis {
+  col: number
+  totalDraws: number
+  strong: { number: number; count: number; pct: number }[]
+  medium: { number: number; count: number; pct: number }[]
+  weak:   { number: number; count: number; pct: number }[]
+  dominantGroup: Group
+  groupProbabilities: { strong: number; medium: number; weak: number }
 }
 
-const COL_COLORS = [
-  "bg-blue-500/20 border-blue-500/50 text-blue-200",
-  "bg-amber-500/20 border-amber-500/50 text-amber-200",
-  "bg-emerald-500/20 border-emerald-500/50 text-emerald-200",
-  "bg-red-500/20 border-red-500/50 text-red-200",
-  "bg-purple-500/20 border-purple-500/50 text-purple-200",
-  "bg-cyan-500/20 border-cyan-500/50 text-cyan-200",
-]
-
-function StepIndicator({ current }: { current: number }) {
-  const steps = ["Loteria", "Dezenas", "Âncoras", "Resultado"]
-  return (
-    <div className="flex items-center gap-0 mb-6">
-      {steps.map((label, i) => {
-        const s = i + 1
-        const done = s < current
-        const active = s === current
-        return (
-          <div key={label} className="flex flex-1 items-center">
-            <div className="flex flex-col items-center">
-              <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors ${
-                done ? "border-emerald-500 bg-emerald-500 text-white" :
-                active ? "border-amber-500 bg-amber-500 text-[#0A0E1A]" :
-                "border-slate-700 bg-transparent text-slate-500"
-              }`}>
-                {done ? <Check size={13} /> : s}
-              </div>
-              <span className={`mt-1 text-[10px] font-medium ${active ? "text-amber-400" : done ? "text-emerald-400" : "text-slate-500"}`}>
-                {label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className={`mb-4 h-0.5 flex-1 transition-colors ${done ? "bg-emerald-500/40" : "bg-slate-800"}`} />
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
+const GROUP_CFG = {
+  strong: { label: "Forte",  bg: "bg-emerald-500/20", border: "border-emerald-500/50", text: "text-emerald-300", badge: "bg-emerald-500", dot: "bg-emerald-400" },
+  medium: { label: "Médio",  bg: "bg-amber-500/20",   border: "border-amber-500/50",   text: "text-amber-300",   badge: "bg-amber-500",   dot: "bg-amber-400"   },
+  weak:   { label: "Fraco",  bg: "bg-slate-600/20",   border: "border-slate-600/50",   text: "text-slate-400",   badge: "bg-slate-500",   dot: "bg-slate-500"   },
 }
 
 export default function GerarPage() {
-  const [step, setStep] = useState(1)
-  const [lottery, setLottery] = useState<typeof LOTTERIES[0] | null>(null)
-  const [betSize, setBetSize] = useState(6)
+  const [lotteryId, setLotteryId] = useState<LotteryId>("megasena")
+  const [mode, setMode] = useState<Mode>("auto")
+  const [chosen, setChosen] = useState<(number | null)[]>([])
   const [anchors, setAnchors] = useState<number[]>([])
+  const [analysis, setAnalysis] = useState<ColumnAnalysis | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [currentCol, setCurrentCol] = useState(0)
+  const [suggestedNumbers, setSuggestedNumbers] = useState<number[]>([])
+  const [anchorInput, setAnchorInput] = useState("")
+  const [syncing, setSyncing] = useState(false)
+  const [dbStatus, setDbStatus] = useState<{ megasena: number; lotofacil: number } | null>(null)
 
-  // Mock generated game
-  const mockGame = { numbers: [7, 18, 29, 37, 45, 58], score: 82, tiers: { strong: 3, medium: 2, weak: 1 }, parityPct: 50 }
+  const lottery = LOTTERIES.find(l => l.id === lotteryId)!
 
-  function toggleAnchor(n: number) {
-    setAnchors(prev => prev.includes(n) ? prev.filter(a => a !== n) : anchors.length < betSize ? [...prev, n] : prev)
+  useEffect(() => {
+    reset()
+    checkDbStatus()
+  }, [lotteryId])
+
+  async function checkDbStatus() {
+    try {
+      const res = await fetch(`${API}/api/stats/status`)
+      const data = await res.json()
+      setDbStatus(data)
+    } catch {}
   }
 
-  const combs = COMBS[betSize] ?? 1
-  const cost = lottery ? (combs * lottery.price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "R$ 0"
+  async function syncData() {
+    setSyncing(true)
+    try {
+      await fetch(`${API}/api/stats/sync/${lotteryId}`, { method: "POST" })
+      await checkDbStatus()
+    } catch {}
+    setSyncing(false)
+  }
+
+  function reset() {
+    setChosen([])
+    setAnchors([])
+    setAnalysis(null)
+    setCurrentCol(0)
+    setSuggestedNumbers([])
+    setSaved(false)
+    setAnchorInput("")
+    if (mode === "manual") loadColumnAnalysis(0, [])
+  }
+
+  async function loadColumnAnalysis(col: number, previous: number[]) {
+    setLoading(true)
+    setAnalysis(null)
+    try {
+      const prev = previous.filter(Boolean).join(",")
+      const url = `${API}/api/stats/${lotteryId}/column/${col + 1}${prev ? `?previous=${prev}` : ""}`
+      const res = await fetch(url)
+      const data = await res.json()
+      setAnalysis(data)
+    } catch {}
+    setLoading(false)
+  }
+
+  async function generateAuto() {
+    setGenerating(true)
+    try {
+      const body = {
+        lottery: lotteryId,
+        anchors: anchors.map((num, idx) => ({ col: idx + 1, number: num })).filter(a => a.number > 0),
+      }
+      const res = await fetch(`${API}/api/stats/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      setChosen(data.numbers)
+      setSuggestedNumbers(data.suggestedNumbers || [])
+      setCurrentCol(lottery.draw)
+    } catch {}
+    setGenerating(false)
+  }
+
+  function pickNumber(num: number) {
+    if (currentCol >= lottery.draw) return
+    const next = [...chosen]
+    next[currentCol] = num
+    setChosen(next)
+    const nextCol = currentCol + 1
+    setCurrentCol(nextCol)
+    if (nextCol < lottery.draw) {
+      loadColumnAnalysis(nextCol, next.filter(Boolean) as number[])
+    }
+  }
+
+  function unpickCol(col: number) {
+    const next = [...chosen]
+    next[col] = null
+    for (let i = col + 1; i < next.length; i++) next[i] = null
+    setChosen(next)
+    setCurrentCol(col)
+    loadColumnAnalysis(col, next.slice(0, col).filter(Boolean) as number[])
+  }
+
+  function addAnchor() {
+    const num = Number(anchorInput)
+    if (!num || num < 1 || num > lottery.universe) return
+    if (anchors.includes(num)) return
+    setAnchors([...anchors, num])
+    setAnchorInput("")
+  }
+
+  async function saveGame() {
+    if (chosen.filter(Boolean).length < lottery.draw) return
+    setSaving(true)
+    try {
+      const token = localStorage.getItem("token")
+      await fetch(`${API}/api/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          lottery: lotteryId,
+          numbers: chosen,
+          suggestedNumbers,
+          anchors,
+          betSize: lottery.draw,
+          score: 80,
+          mode,
+        }),
+      })
+      setSaved(true)
+    } catch {}
+    setSaving(false)
+  }
+
+  const isDone = chosen.filter(Boolean).length === lottery.draw
+  const dbCount = dbStatus?.[lotteryId] ?? 0
 
   return (
     <div className="min-h-screen bg-[#0A0E1A]">
@@ -103,178 +200,242 @@ export default function GerarPage() {
               }`}><Icon size={13} />{label}</Link>
             ))}
           </nav>
-          <button className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300"><LogOut size={13} /> Sair</button>
+          <button className="flex items-center gap-1 text-xs text-slate-500"><LogOut size={13} /> Sair</button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <div className="mb-6">
+      <main className="mx-auto max-w-3xl px-4 py-8 space-y-5">
+        <div>
           <h1 className="text-xl font-extrabold text-white">Gerar jogo</h1>
-          <p className="mt-1 text-sm text-slate-400">Análise estatística por colunas com score 0–100%</p>
+          <p className="mt-1 text-sm text-slate-400">Análise estatística coluna a coluna com base no histórico de 2025</p>
         </div>
 
-        <StepIndicator current={step} />
+        {/* Lottery tabs */}
+        <div className="flex gap-1 rounded-xl border border-slate-800 bg-[#111827] p-1">
+          {LOTTERIES.map(({ id, label }) => (
+            <button key={id} onClick={() => setLotteryId(id)}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${lotteryId === id ? "bg-amber-500 text-[#0A0E1A]" : "text-slate-400 hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
 
-        {/* Step 1 — Loteria */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {LOTTERIES.map((lot) => (
-                <button key={lot.id} onClick={() => setLottery(lot)}
-                  className={`flex flex-col items-center gap-2 rounded-xl border-2 p-5 text-center transition-all ${
-                    lottery?.id === lot.id ? "border-amber-500/60 bg-amber-500/5 ring-2 ring-amber-500/40" : "border-slate-800 bg-[#111827] hover:border-slate-700"
-                  }`}>
-                  <span className="text-3xl">{lot.emoji}</span>
-                  <span className={`font-bold ${lottery?.id === lot.id ? "text-amber-400" : "text-white"}`}>{lot.label}</span>
-                  <span className="text-xs text-slate-400">{lot.range} · {lot.draw} dezenas</span>
-                  {lottery?.id === lot.id && <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-[#0A0E1A]">Selecionada</span>}
-                </button>
+        {/* DB status */}
+        <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-[#111827] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${dbCount > 0 ? "bg-emerald-400" : "bg-red-400"}`} />
+            <span className="text-xs text-slate-400">
+              {dbCount > 0 ? `${dbCount} sorteios na base histórica` : "Sem dados históricos"}
+            </span>
+          </div>
+          <button onClick={syncData} disabled={syncing}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-[#1a2035] px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40">
+            {syncing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+            {syncing ? "Sincronizando..." : "Sincronizar"}
+          </button>
+        </div>
+
+        {/* Mode selector */}
+        <div className="flex gap-2">
+          <button onClick={() => { setMode("auto"); reset() }}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-semibold transition-colors ${
+              mode === "auto" ? "border-amber-500/50 bg-amber-500/10 text-amber-400" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"
+            }`}>
+            <Zap size={15} /> Automático
+          </button>
+          <button onClick={() => { setMode("manual"); reset(); loadColumnAnalysis(0, []) }}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm font-semibold transition-colors ${
+              mode === "manual" ? "border-amber-500/50 bg-amber-500/10 text-amber-400" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"
+            }`}>
+            <Hand size={15} /> Manual
+          </button>
+        </div>
+
+        {/* Anchors */}
+        <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+          <p className="mb-3 text-sm font-semibold text-white">Números âncora <span className="text-xs font-normal text-slate-500">(opcional — seus números favoritos)</span></p>
+          <div className="flex gap-2">
+            <input type="number" min={1} max={lottery.universe} value={anchorInput}
+              onChange={e => setAnchorInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addAnchor()}
+              placeholder={`1 a ${lottery.universe}`}
+              className="w-28 rounded-lg border border-slate-700 bg-[#1a2035] px-3 py-1.5 text-sm text-white outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+            <button onClick={addAnchor}
+              className="rounded-lg border border-slate-700 bg-[#1a2035] px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">
+              Adicionar
+            </button>
+          </div>
+          {anchors.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {anchors.map(n => (
+                <div key={n} className="flex items-center gap-1 rounded-lg bg-amber-500/20 border border-amber-500/40 px-2 py-1">
+                  <Lock size={10} className="text-amber-400" />
+                  <span className="text-xs font-bold text-amber-300">{String(n).padStart(2, "0")}</span>
+                  <button onClick={() => setAnchors(anchors.filter(a => a !== n))} className="ml-1 text-amber-500 hover:text-amber-300">×</button>
+                </div>
               ))}
             </div>
-            <Button onClick={() => { if(lottery){ setBetSize(lottery.min); setStep(2) } }} disabled={!lottery}
-              className="w-full bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400 disabled:opacity-40">
-              Continuar →
-            </Button>
+          )}
+        </div>
+
+        {/* Numbers chosen so far */}
+        {chosen.filter(Boolean).length > 0 && (
+          <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Jogo em construção</p>
+            <div className="flex flex-wrap gap-2">
+              {chosen.map((num, idx) => num ? (
+                <button key={idx} onClick={() => !isDone && unpickCol(idx)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-amber-500/60 bg-amber-500/20 text-sm font-extrabold text-amber-200 hover:border-red-500/60 hover:bg-red-500/10 transition-colors">
+                  {String(num).padStart(2, "0")}
+                </button>
+              ) : (
+                <div key={idx} className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-xs font-bold ${
+                  idx === currentCol ? "border-amber-500 bg-amber-500/10 text-amber-400 animate-pulse" : "border-slate-700 text-slate-600"
+                }`}>
+                  {idx + 1}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Step 2 — Dezenas */}
-        {step === 2 && lottery && (
-          <div className="space-y-5">
-            <div className="rounded-xl border border-slate-800 bg-[#111827] p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm font-semibold text-white">Quantidade de dezenas</p>
-                <span className="rounded-full bg-amber-500 px-3 py-0.5 text-sm font-extrabold text-[#0A0E1A]">{betSize}</span>
+        {/* AUTO MODE */}
+        {mode === "auto" && !isDone && (
+          <button onClick={generateAuto} disabled={generating || dbCount === 0}
+            className="w-full rounded-xl bg-amber-500 py-4 text-base font-extrabold text-[#0A0E1A] hover:bg-amber-400 disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+            {generating ? <><Loader2 size={18} className="animate-spin" /> Gerando jogo...</> : <><Zap size={18} /> Gerar jogo estatístico</>}
+          </button>
+        )}
+
+        {/* MANUAL MODE — column analysis */}
+        {mode === "manual" && !isDone && (
+          <div className="rounded-xl border border-slate-800 bg-[#111827] p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-white">Coluna {currentCol + 1} de {lottery.draw}</p>
+                {analysis && (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Baseado em <strong className="text-slate-300">{analysis.totalDraws}</strong> sorteios históricos
+                    {chosen.filter(Boolean).length > 0 && <> · contexto das colunas anteriores aplicado</>}
+                  </p>
+                )}
               </div>
-              <input type="range" min={lottery.min} max={lottery.max} value={betSize} step={1}
-                onChange={e => setBetSize(Number(e.target.value))}
-                className="mb-4 w-full accent-amber-500" />
-              <div className="flex justify-between text-xs text-slate-500 mb-4">
-                <span>Mín. {lottery.min}</span><span>Máx. {lottery.max}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: "Dezenas", value: String(betSize) },
-                  { label: "Combinações", value: combs.toLocaleString("pt-BR") },
-                  { label: "Custo total", value: cost, gold: true },
-                ].map(({ label, value, gold }) => (
-                  <div key={label} className="rounded-lg bg-[#1a2035] p-2 text-center">
-                    <p className={`text-base font-extrabold ${gold ? "text-amber-400" : "text-white"}`}>{value}</p>
-                    <p className="text-[10px] text-slate-400">{label}</p>
-                  </div>
-                ))}
-              </div>
-              {betSize > lottery.min && (
-                <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300">
-                  {combs.toLocaleString("pt-BR")}× mais chances que uma aposta mínima
+              {analysis && (
+                <div className={`rounded-lg px-3 py-1.5 text-xs font-bold ${GROUP_CFG[analysis.dominantGroup].bg} ${GROUP_CFG[analysis.dominantGroup].text} border ${GROUP_CFG[analysis.dominantGroup].border}`}>
+                  {GROUP_CFG[analysis.dominantGroup].groupProbabilities[analysis.dominantGroup]}% chance de {GROUP_CFG[analysis.dominantGroup].label}
                 </div>
               )}
             </div>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setStep(1)} className="border-slate-700 text-slate-300 hover:bg-slate-800">← Voltar</Button>
-              <Button onClick={() => setStep(3)} className="flex-1 bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">Continuar →</Button>
-            </div>
+
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                <Loader2 size={14} className="animate-spin text-amber-400" /> Analisando histórico...
+              </div>
+            ) : analysis ? (
+              <div className="space-y-4">
+                {/* Group probabilities bar */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-slate-500">Probabilidade por grupo nesta coluna</p>
+                  <div className="flex h-2 w-full overflow-hidden rounded-full gap-0.5">
+                    <div className="bg-emerald-500 rounded-l-full transition-all" style={{ width: `${analysis.groupProbabilities.strong}%` }} />
+                    <div className="bg-amber-500 transition-all" style={{ width: `${analysis.groupProbabilities.medium}%` }} />
+                    <div className="bg-slate-600 rounded-r-full transition-all" style={{ width: `${analysis.groupProbabilities.weak}%` }} />
+                  </div>
+                  <div className="flex gap-4 text-[10px] text-slate-500">
+                    <span><span className="text-emerald-400 font-bold">{analysis.groupProbabilities.strong}%</span> Forte</span>
+                    <span><span className="text-amber-400 font-bold">{analysis.groupProbabilities.medium}%</span> Médio</span>
+                    <span><span className="text-slate-400 font-bold">{analysis.groupProbabilities.weak}%</span> Fraco</span>
+                  </div>
+                </div>
+
+                {/* Number groups */}
+                {(["strong", "medium", "weak"] as Group[]).map(group => {
+                  const cfg = GROUP_CFG[group]
+                  const nums = analysis[group]
+                  if (nums.length === 0) return null
+                  return (
+                    <div key={group}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`h-2 w-2 rounded-full ${cfg.dot}`} />
+                        <p className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}s</p>
+                        <span className="text-[10px] text-slate-600">({nums.length} números)</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {nums.slice(0, 20).map(({ number, pct }) => (
+                          <button key={number}
+                            onClick={() => pickNumber(number)}
+                            disabled={chosen.includes(number)}
+                            className={`relative flex h-9 w-9 items-center justify-center rounded-full border text-xs font-bold transition-all hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+                            {String(number).padStart(2, "0")}
+                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-slate-500">{pct}%</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : dbCount === 0 ? (
+              <p className="text-sm text-red-400 py-2">Sincronize os dados históricos primeiro!</p>
+            ) : null}
           </div>
         )}
 
-        {/* Step 3 — Âncoras */}
-        {step === 3 && lottery && (
-          <div className="space-y-5">
-            <div className="flex items-start gap-2 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-300">
-              <Info size={13} className="mt-0.5 shrink-0" />
-              <span>Âncoras são opcionais. Clique para fixar um número. O sistema escolhe os demais pela análise de colunas.</span>
+        {/* DONE — result */}
+        {isDone && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4">
+            <p className="text-sm font-bold text-emerald-400">Jogo gerado com sucesso!</p>
+
+            <div className="flex flex-wrap gap-2">
+              {chosen.map((num, idx) => (
+                <div key={idx} className="flex flex-col items-center gap-1">
+                  <span className="text-[9px] text-slate-500">Col {idx + 1}</span>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-amber-500/60 bg-amber-500/20 text-sm font-extrabold text-amber-200">
+                    {String(num).padStart(2, "0")}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-white">{lottery.label} — 1 a {lottery.range.split("–")[1]}</p>
-                {anchors.length > 0 && (
-                  <button onClick={() => setAnchors([])} className="text-xs text-red-400 hover:text-red-300">Limpar</button>
-                )}
-              </div>
-              <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${lottery.range.split("–")[1] === "25" ? 5 : 10}, minmax(0,1fr))` }}>
-                {Array.from({ length: Number(lottery.range.split("–")[1]) }, (_, i) => i + 1).map(n => (
-                  <button key={n} onClick={() => toggleAnchor(n)}
-                    disabled={!anchors.includes(n) && anchors.length >= betSize}
-                    className={`aspect-square rounded-lg border text-xs font-bold transition-all ${
-                      anchors.includes(n) ? "border-amber-500 bg-amber-500 text-[#0A0E1A]" :
-                      "border-slate-700 bg-[#1a2035] text-slate-400 hover:border-amber-500/50 hover:text-amber-400 disabled:opacity-30"
-                    }`}>
-                    {String(n).padStart(2, "0")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {anchors.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {anchors.map(n => (
-                  <span key={n} onClick={() => toggleAnchor(n)}
-                    className="flex cursor-pointer items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-400">
-                    {String(n).padStart(2,"0")} ×
-                  </span>
-                ))}
+
+            {/* Suggested vs chosen comparison */}
+            {suggestedNumbers.length > 0 && (
+              <div className="rounded-lg border border-slate-700 bg-[#111827] p-3">
+                <p className="text-xs font-semibold text-slate-400 mb-2">Sistema sugeriu vs você escolheu</p>
+                <div className="grid gap-1">
+                  {chosen.map((num, idx) => {
+                    const sug = suggestedNumbers[idx]
+                    const match = num === sug
+                    return (
+                      <div key={idx} className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500 w-12">Col {idx + 1}</span>
+                        <span className={`font-bold ${match ? "text-emerald-400" : "text-amber-300"}`}>
+                          {String(num).padStart(2, "0")}
+                        </span>
+                        {!match && (
+                          <>
+                            <ChevronRight size={10} className="text-slate-600" />
+                            <span className="text-slate-500">sugerido: <strong className="text-slate-300">{String(sug).padStart(2, "0")}</strong></span>
+                          </>
+                        )}
+                        {match && <span className="text-emerald-600 text-[10px]">✓ coincide com sugestão</span>}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setStep(2)} className="border-slate-700 text-slate-300 hover:bg-slate-800">← Voltar</Button>
-              <Button onClick={() => setStep(4)} className="flex-1 bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400">Gerar jogo →</Button>
-            </div>
-          </div>
-        )}
 
-        {/* Step 4 — Resultado */}
-        {step === 4 && lottery && (
-          <div className="space-y-5">
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400">{lottery.label} · {betSize} dezenas</p>
-                  <p className="mt-0.5 text-sm font-semibold text-white">Jogo gerado</p>
-                </div>
-                {/* Score ring */}
-                <div className="relative flex h-16 w-16 items-center justify-center">
-                  <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
-                    <circle cx="32" cy="32" r="24" strokeWidth="5" stroke="#1E2D45" fill="none" />
-                    <circle cx="32" cy="32" r="24" strokeWidth="5" fill="none" stroke="#10B981"
-                      strokeDasharray={`${(mockGame.score/100)*150.8} 150.8`} strokeLinecap="round" />
-                  </svg>
-                  <span className="absolute text-base font-extrabold text-emerald-400">{mockGame.score}%</span>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {mockGame.numbers.map((n, i) => (
-                  <div key={n} className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-extrabold ${COL_COLORS[i % COL_COLORS.length]}`}>
-                    {String(n).padStart(2,"0")}
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl border border-slate-800 bg-[#111827] p-3 text-center">
-                  <p className="text-sm font-extrabold text-white">3F·2M·1Fr</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Tiers</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-[#111827] p-3 text-center">
-                  <p className="text-sm font-extrabold text-white">50% / 50%</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Par/Ímpar</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-[#111827] p-3 text-center">
-                  <p className="text-sm font-extrabold text-amber-400">R$ {(betSize * lottery.price).toLocaleString("pt-BR",{minimumFractionDigits:2})}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Custo</p>
-                </div>
-              </div>
+            <div className="flex gap-2">
+              <button onClick={reset}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-700 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors">
+                <RotateCcw size={14} /> Novo jogo
+              </button>
+              <button onClick={saveGame} disabled={saving || saved}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-sm font-bold text-[#0A0E1A] hover:bg-amber-400 disabled:opacity-50 transition-colors">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {saved ? "Salvo!" : saving ? "Salvando..." : "Salvar no histórico"}
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => { setStep(1); setLottery(null); setAnchors([]); setSaved(false) }}
-                className="border-slate-700 text-slate-300 hover:bg-slate-800">
-                <RotateCcw size={14} className="mr-1" /> Gerar outro
-              </Button>
-              <Button onClick={() => setSaved(true)} disabled={saved}
-                className={saved ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400" : "bg-amber-500 text-[#0A0E1A] font-bold hover:bg-amber-400"}>
-                <Save size={14} className="mr-1" /> {saved ? "Salvo!" : "Salvar jogo"}
-              </Button>
-            </div>
-            <Button variant="outline" asChild className="w-full border-slate-700 text-slate-300 hover:bg-slate-800">
-              <Link href="/desdobramento"><Layers size={14} className="mr-1" /> Desdobrar este grupo</Link>
-            </Button>
           </div>
         )}
       </main>
