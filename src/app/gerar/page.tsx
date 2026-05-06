@@ -322,7 +322,7 @@ export default function GerarPage() {
               </div>
               {analysis && (
                 <div className={`rounded-lg px-3 py-1.5 text-xs font-bold ${GROUP_CFG[analysis.dominantGroup].bg} ${GROUP_CFG[analysis.dominantGroup].text} border ${GROUP_CFG[analysis.dominantGroup].border}`}>
-                  {GROUP_CFG[analysis.dominantGroup].groupProbabilities[analysis.dominantGroup]}% chance de {GROUP_CFG[analysis.dominantGroup].label}
+                  {analysis.groupProbabilities[analysis.dominantGroup]}% chance de {GROUP_CFG[analysis.dominantGroup].label}
                 </div>
               )}
             </div>
