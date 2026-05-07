@@ -313,7 +313,7 @@ export default function GerarPage() {
                 {analysis && <p className="text-xs text-slate-400 mt-0.5">Baseado em <strong className="text-slate-300">{analysis.totalDraws}</strong> sorteios</p>}
               </div>
               {analysis && (
-          className={`rounded-lg px-3 py-1.5 text-xs font-bold ${analysis.dominantGroup && GROUP_CFG[analysis.dominantGroup] ? GROUP_CFG[analysis.dominantGroup].bg + " " + GROUP_CFG[analysis.dominantGroup].text + " border " + GROUP_CFG[analysis.dominantGroup].border : "bg-slate-700 text-slate-300 border-slate-600"}`}>
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${analysis.dominantGroup && GROUP_CFG[analysis.dominantGroup] ? GROUP_CFG[analysis.dominantGroup].bg + " " + GROUP_CFG[analysis.dominantGroup].text + " border " + GROUP_CFG[analysis.dominantGroup].border : "bg-slate-700 text-slate-300 border-slate-600"}`}>
                   {analysis.groupProbabilities[analysis.dominantGroup]}% chance de {GROUP_CFG[analysis.dominantGroup].label}
                 </div>
               )}
