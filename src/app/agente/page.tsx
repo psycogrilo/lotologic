@@ -113,19 +113,19 @@ Regras:
 - Responda em português brasileiro, de forma natural e amigável
 - Seja conciso mas completo`
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://lotologic-api-production.up.railway.app/api/agent/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.NEXT_PUBLIC_ANTHROPIC_KEY || "", "anthropic-version": "2023-06-01" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
-          system: systemPrompt,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          context: statsContext,
         }),
       })
 
       const data = await response.json()
-      const assistantText = data.content?.[0]?.text || "Desculpe, tive um problema ao responder. Tente novamente!"
+      const assistantText = data.text || "Desculpe, tive um problema ao responder. Tente novamente!"
 
       setMessages([...newMessages, { role: "assistant", content: assistantText }])
     } catch {
